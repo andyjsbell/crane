@@ -26,6 +26,52 @@ let
   inherit (lib.lists)
     flatten
     unique;
+
+  # Define or adjust vendorCargoRegistries to ensure no filtering
+  vendorCargoRegistries = { cargoConfigs, lockPackages, overrideVendorCargoPackage, registries ? null }:
+    let
+      includeAllFiles = path: type: true; # Accept all files
+
+      generateRegistryConfig = registries: ''
+        [source.crates-io]
+        replace-with = "vendored-sources"
+
+        [source.vendored-sources]
+        directory = "${registries}"
+      '';
+    in
+    {
+      config = generateRegistryConfig ./vendor; # Assuming `./vendor` is the vendored directory
+      sources = lib.cleanSourceWith {
+        src = ./.; # Path to your source directory
+        filter = includeAllFiles;
+      };
+    };
+
+  # Define or adjust vendorGitDeps to ensure no filtering
+  vendorGitDeps = { lockPackages, outputHashes, overrideVendorGitCheckout }:
+    let
+      includeAllFiles = path: type: true; # Accept all files
+
+      generateGitConfig = gitDeps: concatMapStrings (dep: ''
+        [source.${dep.id}]
+        replace-with = "vendored-sources-${dep.id}"
+
+        [source.vendored-sources-${dep.id}]
+        directory = "${dep.path}"
+      '') gitDeps;
+    in
+    {
+      config = generateGitConfig (map (dep: {
+        id = dep.name;
+        path = ./vendor/${dep.name};
+      }) lockPackages); # Adjust paths as needed
+      sources = lib.cleanSourceWith {
+        src = ./.; # Path to your source directory
+        filter = includeAllFiles;
+      };
+    };
+
 in
 { cargoConfigs ? [ ]
 , cargoLockContentsList ? [ ]
@@ -36,18 +82,18 @@ in
 , overrideVendorGitCheckout ? _: drv: drv
 , registries ? null
 }:
+
 let
   cargoLocksParsed = (map fromTOML ((map readFile cargoLockList) ++ cargoLockContentsList))
     ++ cargoLockParsedList;
 
-  # Extract all packages from all Cargo.locks and trim any unused attributes from the parsed
-  # data so we do not get any faux duplicates
   allowedAttrs = {
     name = true;
     version = true;
     source = true;
     checksum = true;
   };
+
   allPackagesTrimmed = map
     (l: map
       (filterAttrs (k: _: allowedAttrs.${k} or false))
@@ -73,6 +119,7 @@ let
       ln -s ${escapeShellArg sources.${name}} $out/${escapeShellArg name}
     '')
     (attrNames sources);
+
 in
 runCommandLocal "vendor-cargo-deps" { } ''
   mkdir -p $out
