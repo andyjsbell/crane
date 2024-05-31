@@ -41,7 +41,8 @@ let
       '';
     in
     {
-      config = generateRegistryConfig ./vendor; # Assuming `./vendor` is the vendored directory
+      config = trace "Generating registry config with vendored directory: ./vendor" (generateRegistryConfig ./vendor);
+      # config = generateRegistryConfig ./vendor; # Assuming `./vendor` is the vendored directory
       sources = lib.cleanSourceWith {
         src = ./.; # Path to your source directory
         filter = includeAllFiles;
